@@ -1,9 +1,5 @@
 import Axios from "axios";
 
-if (typeof window == "undefined") {
-    Axios.defaults.baseURL = 'http://127.0.0.1:8080';
-}
-
 export function reqJsonData(url, params = {}, method = 'post') {
     if (method === 'get') {
         return Axios.get('/' + url, { params })
@@ -60,6 +56,50 @@ export default {
 
     adminResourceList(params) {
         return reqJsonData('manage/adminResource/getList', params, 'get')
+    },
+
+    adminTemplateList(params) {
+        return reqJsonData('manage/template/getTemplateForderList', params, 'get')
+    },
+
+    getTemplateFileInfo(params) {
+        return reqJsonData('manage/template/getTemplateFileText', params, 'get')
+    },
+
+    updateTemplateFileText(params) {
+        return reqJsonData('manage/template/updateTemplateFileText', params)
+    },
+
+    getMyTemplateList(params) {
+        return reqJsonData('manage/template/getMyTemplateList', params, 'get')
+    },
+
+    addTemplateItem(params) {
+        return reqJsonData('manage/template/addTemplateItem', params)
+    },
+
+    delTemplateItem(params) {
+        return reqJsonData('manage/template/delTemplateItem', params, 'get')
+    },
+
+    getTemplateItemlist(params) {
+        return reqJsonData('manage/template/getTemplateItemlist', params, 'get')
+    },
+
+    getTemplatelistfromShop(params) {
+        return reqJsonData('manage/template/getTempsFromShop', params, 'get')
+    },
+
+    installTemp(params) {
+        return reqJsonData('manage/template/installTemp', params, 'get')
+    },
+
+    enableTemp(params) {
+        return reqJsonData('manage/template/enableTemp', params, 'get')
+    },
+
+    uninstallTemp(params) {
+        return reqJsonData('manage/template/uninstallTemp', params, 'get')
     },
 
     addAdminResource(params) {

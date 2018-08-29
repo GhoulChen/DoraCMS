@@ -98,6 +98,33 @@ const state = {
             err: {}
         }
     },
+    adminTemplate: {
+        formState: {
+
+        },
+        templateList: {
+            pageInfo: {},
+            docs: []
+        }
+    },
+    myTemplates: {
+        formState: {
+            show: false,
+            edit: false,
+            formData: {
+
+            }
+        },
+        templateList: {
+            pageInfo: {},
+            docs: []
+        },
+        templateItemForderList: {}
+    },
+    tempShoplist: {
+        pageInfo: {},
+        docs: []
+    },
     systemConfig: {
         configs: {
             siteName: '',
@@ -108,7 +135,10 @@ const state = {
             siteEmail: '',
             siteEmailPwd: '',
             mongoDBPath: '',
-            databackForderPath: ''
+            databackForderPath: '',
+            poseArticlScore: '',
+            postMessageScore: '',
+            shareArticlScore: ''
         }
     },
     contentCategory: {
@@ -121,9 +151,11 @@ const state = {
                 enable: false,
                 defaultUrl: '',
                 parentId: '',
+                contentTemp: '',
                 parentObj: '',
                 sortId: 0,
-                comments: ''
+                comments: '',
+                type: '1'
             }
         },
         categoryList: {
@@ -141,14 +173,16 @@ const state = {
             formData: {
                 title: '',
                 stitle: '',
-                type: '',
+                type: '1',
                 categories: [],
                 sortPath: '',
                 tags: [],
                 keywords: '',
-                sImg: '',
+                sImg: '/upload/images/defaultImg.jpg',
                 discription: '',
                 author: {},
+                uAuthor: '',
+                markDownComments: '',
                 state: true,
                 isTop: 0,
                 clickNum: 0,
@@ -156,7 +190,11 @@ const state = {
                 commentNum: 0,
                 likeNum: 0,
                 likeUserIds: '',
-                from: '1'
+                from: '1',
+                postValue: 3,
+                translate: '',
+                twiterAuthor: ''
+
             }
         },
         contentList: {
@@ -226,7 +264,8 @@ const state = {
                 email: '',
                 comments: '',
                 phoneNum: '',
-                enable: true
+                enable: true,
+                integral: 0
             }
         },
         userList: {
@@ -264,9 +303,11 @@ const state = {
             formData: {
                 name: '',
                 type: '1',
+                height: '',
                 comments: '',
                 items: [],
-                state: true
+                state: true,
+                carousel: true
             }
         },
         itemFormState: {
@@ -386,6 +427,27 @@ const mutations = {
     [types.ADMINRESOURCE_LIST](state, resourceList) {
         state.adminResource.resourceList = resourceList
     },
+    [types.ADMINTEMPLATE_LIST](state, templateList) {
+        state.adminTemplate.templateList = templateList
+    },
+    [types.MYTEMPLATE_LIST](state, templateList) {
+        state.myTemplates.templateList = templateList
+    },
+    [types.TEMPLATECONFIG_FORMSTATE](state, formState) {
+        state.myTemplates.formState.show = formState.show;
+        state.myTemplates.formState.edit = formState.edit;
+        state.myTemplates.formState.formData = Object.assign({
+            name: '',
+            alias: '',
+            comments: ''
+        }, formState.formData);
+    },
+    [types.TEMPLATEITEMFORDER_LIST](state, forderList) {
+        state.myTemplates.templateItemForderList = forderList
+    },
+    [types.DORACMSTEMPLATE_LIST](state, templist) {
+        state.tempShoplist = templist
+    },
     [types.SYSTEMCONFIG_CONFIGLIST](state, config) {
         state.systemConfig.configs = Object.assign({
             siteName: '',
@@ -396,7 +458,10 @@ const mutations = {
             siteEmail: '',
             siteEmailPwd: '',
             mongoDBPath: '',
-            databackForderPath: ''
+            databackForderPath: '',
+            poseArticlScore: '',
+            postMessageScore: '',
+            shareArticlScore: ''
         }, config)
     },
     [types.CONTENTCATEGORYS_FORMSTATE](state, formState) {
@@ -409,8 +474,10 @@ const mutations = {
             defaultUrl: '',
             parentId: '',
             parentObj: {},
+            contentTemp: '',
             sortId: 0,
-            comments: ''
+            comments: '',
+            type: '1'
         }, formState.formData);
 
     },
@@ -422,14 +489,16 @@ const mutations = {
         state.content.formState.formData = Object.assign({
             title: '',
             stitle: '',
-            type: '',
+            type: '1',
             categories: [],
             sortPath: '',
             tags: [],
             keywords: '',
-            sImg: '',
+            sImg: '/upload/images/defaultImg.jpg',
             discription: '',
             author: {},
+            uAuthor: '',
+            markDownComments: '',
             state: true,
             isTop: 0,
             clickNum: 0,
@@ -437,7 +506,10 @@ const mutations = {
             commentNum: 0,
             likeNum: 0,
             likeUserIds: '',
-            from: '1'
+            from: '1',
+            postValue: 3,
+            translate: '',
+            twiterAuthor: ''
         }, formState.formData);
 
     },
@@ -528,9 +600,11 @@ const mutations = {
         state.ads.infoFormState.formData = Object.assign({
             name: '',
             type: '1',
+            height: '',
             comments: '',
             items: [],
-            state: true
+            state: true,
+            carousel: true
         }, formState.formData);
     },
     [types.ADS_ITEM_FORMSTATE](state, formState) {

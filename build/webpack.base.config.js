@@ -2,16 +2,14 @@ const path = require('path')
 const webpack = require('webpack')
 const FriendlyErrorsPlugin = require('friendly-errors-webpack-plugin')
 const isProd = process.env.NODE_ENV === 'production'
-
+const LodashModuleReplacementPlugin = require('lodash-webpack-plugin');
 const config = {
     performance: {
         maxEntrypointSize: 300000,
         hints: isProd ? 'warning' : false
     },
     entry: {
-        app: './src/entry-client.js',
-        admin: './src/admin.js',
-        vendor: ['./src/polyfill']
+        admin: './src/admin.js'
     },
     output: {
         path: path.resolve(__dirname, '../dist'),
@@ -28,10 +26,9 @@ const config = {
             '@': path.join(__dirname, '..', 'src'),
             'scss_vars': '@/manage/assets/styles/vars.scss',
             '~src': path.resolve(__dirname, '../src'),
-            '~api': path.resolve(__dirname, '../src/api/index-client'),
+            '~server': path.resolve(__dirname, '../server'),
             '~mixins': path.resolve(__dirname, '../src/mixins'),
-            '~utils': path.resolve(__dirname, '../src/utils'),
-            'api-config': path.resolve(__dirname, '../src/api/config-client')
+            '~utils': path.resolve(__dirname, '../src/utils')
         }
     },
     resolveLoader: {
@@ -53,6 +50,7 @@ const config = {
         }]
     },
     plugins: [
+        new LodashModuleReplacementPlugin,
         new webpack.DefinePlugin({
             'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV || 'development')
         })

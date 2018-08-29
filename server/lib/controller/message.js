@@ -3,12 +3,14 @@ const ContentModel = require("../models").Content;
 const MessageModel = require("../models").Message;
 const SystemConfigModel = require("../models").SystemConfig;
 const UserModel = require("../models").User;
+const AdminUserModel = require("../models").AdminUser;
 const formidable = require('formidable');
 const _ = require('lodash');
 const shortid = require('shortid');
-const validator = require('validator')
-const { service, settings, validatorUtil, logUtil, siteFunc } = require('../../../utils');
-
+const validator = require('validator');
+const xss = require("xss");
+const { service, validatorUtil, siteFunc } = require('../../../utils');
+const settings = require('../../../configs/settings');
 
 class Message {
     constructor() {
@@ -16,6 +18,7 @@ class Message {
     }
     async getMessages(req, res, next) {
         try {
+            let modules = req.query.modules;
             let current = req.query.current || 1;
             let pageSize = req.query.pageSize || 10;
             let searchkey = req.query.searchkey;
@@ -34,30 +37,45 @@ class Message {
             }
             const messages = await MessageModel.find(queryObj).sort({
                 date: -1
-            }).skip(10 * (Number(current) - 1)).limit(Number(pageSize)).populate([{
+            }).skip(Number(pageSize) * (Number(current) - 1)).limit(Number(pageSize)).populate([{
                 path: 'contentId',
-                select: 'stitle _id'
+                select: 'title stitle _id'
             }, {
                 path: 'author',
                 select: 'userName _id enable date logo'
-            }]).populate('replyAuthor').populate('adminAuthor').exec();
+            }, {
+                path: 'replyAuthor',
+                select: 'userName _id enable date logo'
+            }, {
+                path: 'adminAuthor',
+                select: 'userName _id enable date logo'
+            }, {
+                path: 'adminReplyAuthor',
+                select: 'userName _id enable date logo'
+            }]).exec();
             const totalItems = await MessageModel.count(queryObj);
-            res.send({
-                state: 'success',
+
+            let messageData = {
                 docs: messages,
                 pageInfo: {
                     totalItems,
                     current: Number(current) || 1,
-                    pageSize: Number(pageSize) || 10
+                    pageSize: Number(pageSize) || 10,
+                    searchkey: searchkey || '',
+                    totalPage: Math.ceil(totalItems / pageSize)
                 }
-            })
+            };
+            let renderData = siteFunc.renderApiData(res, 200, 'message', messageData, 'getlist');
+            if (modules && modules.length > 0) {
+                return renderData.data;
+            } else {
+                res.send(renderData);
+            }
+
         } catch (err) {
-            logUtil.error(err, req);
-            res.send({
-                state: 'error',
-                type: 'ERROR_DATA',
-                message: '获取Message失败'
-            })
+
+            res.send(siteFunc.renderApiErr(req, res, 500, err, 'getlist'))
+
         }
     }
 
@@ -67,39 +85,30 @@ class Message {
             try {
                 let errMsg = '';
                 if (_.isEmpty(req.session.user) && _.isEmpty(req.session.adminUserInfo)) {
-                    errMsg = '非法操作，请稍后重试！'
+                    errMsg = res.__("validate_error_params")
                 }
                 if (!shortid.isValid(fields.contentId)) {
-                    errMsg = '请针对指定文章进行评论！'
+                    errMsg = res.__("validate_message_add_err")
                 }
                 if (fields.content && (fields.content.length < 5 || fields.content.length > 200)) {
-                    errMsg = '留言内容为5-200字'
+                    errMsg = res.__("validate_rangelength", { min: 5, max: 200, label: res.__("label_messages_content") })
                 }
                 if (!fields.content) {
-                    errMsg = '留言内容不能为空'
+                    errMsg = res.__("validate_inputNull", { label: res.__("label_messages_content") })
                 }
                 if (errMsg) {
-                    res.send({
-                        state: 'error',
-                        type: 'ERROR_PARAMS',
-                        message: errMsg
-                    })
-                    return
+                    throw new siteFunc.UserException(errMsg);
                 }
             } catch (err) {
                 console.log(err.message, err);
-                res.send({
-                    state: 'error',
-                    type: 'ERROR_PARAMS',
-                    message: err.message
-                })
-                return
+                res.send(siteFunc.renderApiErr(req, res, 500, err, 'checkform'));
             }
 
             const messageObj = {
                 contentId: fields.contentId,
-                content: validatorUtil.validateWords(fields.content),
+                content: xss(fields.content),
                 replyAuthor: fields.replyAuthor,
+                adminReplyAuthor: fields.adminReplyAuthor,
                 relationMsgId: fields.relationMsgId,
                 utype: fields.utype || '0'
             }
@@ -110,51 +119,49 @@ class Message {
                 messageObj.author = req.session.user._id;
             }
 
+            // console.log('----messageObj---', messageObj);
             const newMessage = new MessageModel(messageObj);
             try {
                 let currentMessage = await newMessage.save();
                 await ContentModel.findOneAndUpdate({ _id: fields.contentId }, { '$inc': { 'commentNum': 1 } })
 
                 // 给被回复用户发送提醒邮件
+                const systemConfigs = await SystemConfigModel.find({});
+                const contentInfo = await ContentModel.findOne({ _id: fields.contentId });
+                let replyAuthor;
+
                 if (fields.replyAuthor) {
-                    const systemConfigs = await SystemConfigModel.find({});
-                    const msgInfo = await MessageModel.findOne({ _id: currentMessage._id }).populate([{
-                        path: 'author',
-                        select: 'email userName'
-                    },
-                    {
-                        path: 'replyAuthor',
-                        select: 'email userName'
-                    },
-                    {
-                        path: 'contentId',
-                        select: '_id title'
-                    }]).exec();
-                    if (!_.isEmpty(systemConfigs) && !_.isEmpty(msgInfo)) {
-                        let mailParams = {
-                            replyAuthor: msgInfo.replyAuthor,
-                            content: msgInfo.contentId
-                        }
-                        if (fields.utype === '1') {
-                            mailParams.adminAuthor = req.session.adminUserInfo
-                        } else {
-                            mailParams.author = replyAuthor.author
-                        }
-                        service.sendEmail(req, systemConfigs[0], settings.email_notice_user_contentMsg, mailParams);
-                    }
+                    replyAuthor = await UserModel.findOne({ _id: fields.replyAuthor })
+                } else {
+                    replyAuthor = await AdminUserModel.findOne({ _id: fields.adminReplyAuthor });
                 }
 
-                res.send({
-                    state: 'success',
-                    id: newMessage._id
-                });
+                if (!_.isEmpty(systemConfigs) && !_.isEmpty(contentInfo) && !_.isEmpty(replyAuthor)) {
+                    let mailParams = {
+                        replyAuthor: replyAuthor,
+                        content: contentInfo
+                    }
+                    if (fields.utype === '1') {
+                        mailParams.adminAuthor = req.session.adminUserInfo
+                    } else {
+                        mailParams.author = req.session.user
+                    }
+                    systemConfigs[0]['siteDomain'] = systemConfigs[0]['siteDomain'];
+                    service.sendEmail(req, res, systemConfigs[0], settings.email_notice_user_contentMsg, mailParams);
+                }
+
+                // 针对用户留言添加积分
+                // console.log('--准备加分--', fields.utype + '---' + req.session.user._id);
+                if (messageObj.utype === '0') {
+                    const addScore = systemConfigs[0]['postMessageScore'];
+                    const newUser = await UserModel.findOneAndUpdate({ _id: req.session.user._id }, { '$inc': { 'integral': addScore } })
+                    req.session.user = _.assign(req.session.user, { integral: newUser.integral + 5 })
+                }
+
+                res.send(siteFunc.renderApiData(res, 200, 'message', { id: newMessage._id }, 'save'))
             } catch (err) {
-                logUtil.error(err, req);
-                res.send({
-                    state: 'error',
-                    type: 'ERROR_IN_SAVE_DATA',
-                    message: '保存留言数据失败:' + err,
-                })
+
+                res.send(siteFunc.renderApiErr(req, res, 500, err, 'save'));
             }
         })
     }
@@ -164,38 +171,30 @@ class Message {
         try {
             let errMsg = '', targetIds = req.query.ids;
             if (!siteFunc.checkCurrentId(targetIds)) {
-                errMsg = '非法请求，请稍后重试！';
+                errMsg = res.__("validate_error_params");
             } else {
                 targetIds = targetIds.split(',');
             }
             if (errMsg) {
-                res.send({
-                    state: 'error',
-                    message: errMsg,
-                })
+                throw new siteFunc.UserException(errMsg);
             }
-            let contentIdArr = [];
+
             for (let i = 0; i < targetIds.length; i++) {
                 let msgObj = await MessageModel.findOne({ _id: targetIds[i] });
-                if (msgObj && contentIdArr.indexOf(msgObj.contentId) == -1) {
-                    // 避免重复删除
-                    contentIdArr.push(msgObj.contentId);
+                if (msgObj) {
                     await ContentModel.findOneAndUpdate({ _id: msgObj.contentId }, { '$inc': { 'commentNum': -1 } })
                 }
             }
             await MessageModel.remove({ '_id': { $in: targetIds } });
-            res.send({
-                state: 'success'
-            });
+
+            res.send(siteFunc.renderApiData(res, 200, 'message', {}, 'delete'))
+
         } catch (err) {
-            logUtil.error(err, req);
-            res.send({
-                state: 'error',
-                type: 'ERROR_IN_SAVE_DATA',
-                message: '删除数据失败:',
-            })
+
+            res.send(siteFunc.renderApiErr(req, res, 500, err, 'delete'));
         }
     }
+
 
 }
 

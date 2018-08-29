@@ -2,27 +2,23 @@ const BaseComponent = require('../prototype/baseComponent');
 const AdsModel = require("../models").Ads;
 const AdsItemsModel = require("../models").AdsItems;
 const formidable = require('formidable');
-const { service, settings, validatorUtil, logUtil, siteFunc } = require('../../../utils');
+const { service, validatorUtil, siteFunc } = require('../../../utils');
 const shortid = require('shortid');
 const validator = require('validator')
 
 function checkFormData(req, res, fields) {
     let errMsg = '';
     if (fields._id && !siteFunc.checkCurrentId(fields._id)) {
-        errMsg = '非法请求，请稍后重试！';
+        errMsg = res.__("validate_error_params");
     }
     if (!validator.isLength(fields.name, 2, 15)) {
-        errMsg = '2-15个非特殊字符!';
+        errMsg = res.__("validate_rangelength", { min: 2, max: 15, label: res.__("label_ads_name") });
     }
     if (!validator.isLength(fields.comments, 5, 30)) {
-        errMsg = '5-30个非特殊字符!';
+        errMsg = res.__("validate_rangelength", { min: 5, max: 30, label: res.__("label_comments") });
     }
     if (errMsg) {
-        res.send({
-            state: 'error',
-            type: 'ERROR_PARAMS',
-            message: errMsg
-        })
+        throw new siteFunc.UserException(errMsg);
     }
 }
 
@@ -32,34 +28,39 @@ class Ads {
     }
     async getAds(req, res, next) {
         try {
+            let modules = req.query.modules;
             let current = req.query.current || 1;
             let pageSize = req.query.pageSize || 10;
             let model = req.query.model; // 查询模式 full/simple
+            let state = req.query.state;
             let queryObj = {};
             if (model === 'full') {
                 pageSize = '1000'
             }
+            if (state) queryObj.state = state
 
-            const Ads = await AdsModel.find(queryObj).sort({ date: -1 }).skip(10 * (Number(current) - 1)).limit(Number(pageSize)).populate([{
+            const Ads = await AdsModel.find(queryObj).sort({ date: -1 }).skip(Number(pageSize) * (Number(current) - 1)).limit(Number(pageSize)).populate([{
                 path: 'items'
             }]).exec();
             const totalItems = await AdsModel.count();
-            res.send({
-                state: 'success',
+            let adsData = {
                 docs: Ads,
                 pageInfo: {
                     totalItems,
                     current: Number(current) || 1,
                     pageSize: Number(pageSize) || 10
                 }
-            })
+            };
+            let renderData = siteFunc.renderApiData(res, 200, 'ads', adsData, 'getlist')
+            if (modules && modules.length > 0) {
+                return renderData.data;
+            } else {
+                res.send(renderData);
+            }
         } catch (err) {
-            logUtil.error(err, req);
-            res.send({
-                state: 'error',
-                type: 'ERROR_DATA',
-                message: '获取Ads失败' + err
-            })
+
+            res.send(siteFunc.renderApiErr(req, res, 500, err, 'getlist'))
+
         }
     }
 
@@ -71,17 +72,13 @@ class Ads {
             const ad = await AdsModel.findOne(queryObj).populate([{
                 path: 'items'
             }]).exec();
-            res.send({
-                state: 'success',
+            let adsData = {
                 doc: ad || {}
-            })
-        } catch (error) {
-            logUtil.error(err, req);
-            res.send({
-                state: 'error',
-                type: 'ERROR_DATA',
-                message: '获取Ad失败' + err
-            })
+            }
+            let renderAdsData = siteFunc.renderApiData(res, 200, 'ads', adsData)
+            res.send(renderAdsData)
+        } catch (err) {
+            res.send(siteFunc.renderApiErr(req, res, 500, err, 'getlist'))
         }
     }
 
@@ -92,16 +89,13 @@ class Ads {
                 checkFormData(req, res, fields);
             } catch (err) {
                 console.log(err.message, err);
-                res.send({
-                    state: 'error',
-                    type: 'ERROR_PARAMS',
-                    message: err.message
-                })
-                return
+                res.send(siteFunc.renderApiErr(req, res, 500, err, 'checkform'));
             }
             const adObj = {
                 name: fields.name,
                 state: fields.state,
+                height: fields.height,
+                carousel: fields.carousel,
                 type: fields.type,
                 comments: fields.comments
             }
@@ -117,17 +111,10 @@ class Ads {
             const newAds = new AdsModel(adObj);
             try {
                 await newAds.save();
-                res.send({
-                    state: 'success',
-                    id: newAds._id
-                });
+                res.send(siteFunc.renderApiData(res, 200, 'ads', { id: newAds._id }, 'save'))
             } catch (err) {
-                logUtil.error(err, req);
-                res.send({
-                    state: 'error',
-                    type: 'ERROR_IN_SAVE_DATA',
-                    message: '保存数据失败:',
-                })
+
+                res.send(siteFunc.renderApiErr(req, res, 500, err, 'save'));
             }
         })
     }
@@ -139,17 +126,14 @@ class Ads {
                 checkFormData(req, res, fields);
             } catch (err) {
                 console.log(err.message, err);
-                res.send({
-                    state: 'error',
-                    type: 'ERROR_PARAMS',
-                    message: err.message
-                })
-                return
+                res.send(siteFunc.renderApiErr(req, res, 500, err, 'checkform'));
             }
 
             const userObj = {
                 name: fields.name,
                 state: fields.state,
+                height: fields.height,
+                carousel: fields.carousel,
                 type: fields.type,
                 comments: fields.comments
             }
@@ -172,16 +156,11 @@ class Ads {
                 }
                 userObj.items = itemIdArr;
                 await AdsModel.findOneAndUpdate({ _id: item_id }, { $set: userObj });
-                res.send({
-                    state: 'success'
-                });
+                res.send(siteFunc.renderApiData(res, 200, 'ads', {}, 'update'))
+
             } catch (err) {
-                logUtil.error(err, req);
-                res.send({
-                    state: 'error',
-                    type: 'ERROR_IN_SAVE_DATA',
-                    message: '更新数据失败:' + err,
-                })
+
+                res.send(siteFunc.renderApiErr(req, res, 500, err, 'update'));
             }
         })
 
@@ -191,15 +170,12 @@ class Ads {
         try {
             let errMsg = '', targetIds = req.query.ids;
             if (!siteFunc.checkCurrentId(targetIds)) {
-                errMsg = '非法请求，请稍后重试！';
+                errMsg = res.__("validate_error_params");
             } else {
                 targetIds = targetIds.split(',');
             }
             if (errMsg) {
-                res.send({
-                    state: 'error',
-                    message: errMsg,
-                })
+                throw new siteFunc.UserException(errMsg);
             }
             for (let i = 0; i < targetIds.length; i++) {
                 let currentId = targetIds[i];
@@ -207,16 +183,11 @@ class Ads {
                 await AdsItemsModel.remove({ '_id': { $in: targetAd.items } });
                 await AdsModel.remove({ _id: currentId });
             }
-            res.send({
-                state: 'success'
-            });
+            res.send(siteFunc.renderApiData(res, 200, 'ads', {}, 'delete'))
+
         } catch (err) {
-            logUtil.error(err, req);
-            res.send({
-                state: 'error',
-                type: 'ERROR_IN_SAVE_DATA',
-                message: '删除数据失败:' + err,
-            })
+
+            res.send(siteFunc.renderApiErr(req, res, 500, err, 'delete'));
         }
     }
 

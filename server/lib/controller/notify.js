@@ -4,27 +4,23 @@ const AdminUserModel = require("../models").AdminUser;
 const UserModel = require("../models").User;
 const UserNotifyModel = require("../models").UserNotify;
 const formidable = require('formidable');
-const { service, settings, validatorUtil, logUtil, siteFunc } = require('../../../utils');
+const { service, validatorUtil, siteFunc } = require('../../../utils');
 const shortid = require('shortid');
 const validator = require('validator')
 
 function checkFormData(req, res, fields) {
     let errMsg = '';
     if (fields._id && !siteFunc.checkCurrentId(fields._id)) {
-        errMsg = '非法请求，请稍后重试！';
+        errMsg = res.__("validate_error_params");
     }
     if (!validator.isLength(fields.title, 5, 100)) {
-        errMsg = '5-100个非特殊字符!';
+        errMsg = res.__("validate_rangelength", { min: 5, max: 100, label: res.__("label_notify_title") });
     }
     if (!validator.isLength(fields.content, 5, 500)) {
-        errMsg = '5-500个非特殊字符!';
+        errMsg = res.__("validate_rangelength", { min: 5, max: 500, label: res.__("label_notify_content") });
     }
     if (errMsg) {
-        res.send({
-            state: 'error',
-            type: 'ERROR_PARAMS',
-            message: errMsg
-        })
+        throw new siteFunc.UserException(errMsg);
     }
 }
 
@@ -40,27 +36,25 @@ class Notify {
             if (type) {
                 queryObj.type = type;
             }
-            const notifies = await NotifyModel.find(queryObj).sort({ date: -1 }).skip(10 * (Number(current) - 1)).limit(Number(pageSize)).populate([{
+            const notifies = await NotifyModel.find(queryObj).sort({ date: -1 }).skip(Number(pageSize) * (Number(current) - 1)).limit(Number(pageSize)).populate([{
                 path: 'adminSender',
                 select: 'userName -_id'
             }]).exec();
             const totalItems = await NotifyModel.count(queryObj);
-            res.send({
-                state: 'success',
+            let renderData = {
                 docs: notifies,
                 pageInfo: {
                     totalItems,
                     current: Number(current) || 1,
-                    pageSize: Number(pageSize) || 10
+                    pageSize: Number(pageSize) || 10,
+                    totalPage: Math.ceil(totalItems / pageSize)
                 }
-            })
+            };
+            res.send(siteFunc.renderApiData(res, 200, 'notify', renderData, 'getlist'))
         } catch (err) {
-            logUtil.error(err, req);
-            res.send({
-                state: 'error',
-                type: 'ERROR_DATA',
-                message: '获取Notify失败'
-            })
+
+            res.send(siteFunc.renderApiErr(req, res, 500, err, 'getlist'))
+
         }
     }
 
@@ -73,25 +67,18 @@ class Notify {
         try {
             let errMsg = '';
             if (!siteFunc.checkCurrentId(req.query.ids)) {
-                errMsg = '非法请求，请稍后重试！';
+                errMsg = res.__("validate_error_params");
             }
             if (errMsg) {
-                res.send({
-                    state: 'error',
-                    message: errMsg,
-                })
+                throw new siteFunc.UserException(errMsg);
             }
             await NotifyModel.remove({ _id: req.query.ids });
-            res.send({
-                state: 'success'
-            });
+
+            res.send(siteFunc.renderApiData(res, 200, 'notify', {}, 'delete'))
+
         } catch (err) {
-            logUtil.error(err, req);
-            res.send({
-                state: 'error',
-                type: 'ERROR_IN_SAVE_DATA',
-                message: '删除数据失败:',
-            })
+
+            res.send(siteFunc.renderApiErr(req, res, 500, err, 'delete'));
         }
     }
 
@@ -103,12 +90,7 @@ class Notify {
                 checkFormData(req, res, fields);
             } catch (err) {
                 console.log(err.message, err);
-                res.send({
-                    state: 'error',
-                    type: 'ERROR_PARAMS',
-                    message: err.message
-                })
-                return
+                res.send(siteFunc.renderApiErr(req, res, 500, err, 'checkform'));
             }
 
             const announceObj = {
@@ -132,16 +114,11 @@ class Notify {
                     }
                 }
 
-                res.send({
-                    state: 'success'
-                });
+                res.send(siteFunc.renderApiData(res, 200, 'notify', {}, 'save'))
+
             } catch (err) {
-                logUtil.error(err, req);
-                res.send({
-                    state: 'error',
-                    type: 'ERROR_IN_SAVE_DATA',
-                    message: '保存数据失败:' + err,
-                })
+
+                res.send(siteFunc.renderApiErr(req, res, 500, err, 'save'));
             }
         })
     }
